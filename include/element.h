@@ -39,6 +39,7 @@ class element {
     T get_detJ(const T xi, const T eta) const;
     void compute_jacobian(const T xi, const T eta, arma::Mat<T>& Jinv, T& detJ, arma::Mat<T>& A) const;
     arma::Col<T> dN(const int i, const T xi, const T eta) const;
+    T get_coord(const int a,const T xi, const T eta) const;
 
   private:
     std::vector<int> connectivity;
@@ -146,6 +147,26 @@ template <typename T> arma::Col<T> element<T>::dN(const int i, const T xi, const
 
   return dNdX;
 
+}
+
+// a is the coordinate index 0-> x  1->y
+template <typename T> T  element<T>::get_coord(const int a,const T xi, const T eta) const {
+  T ret{0};
+  switch (a){
+    case 0 :
+      for (int i=0;i<this->nodes.size();++i){
+        ret += N(i,xi,eta)*nodes[i].get_x();
+      }
+      break;
+    case 1:
+      for (int i=0;i<this->nodes.size();++i){
+        ret += N(i,xi,eta)*nodes[i].get_y();
+      }
+      break;
+    default:
+      std::cerr << "a is not in range in function element.get_coord(const int a,...)\n";
+  }
+  return ret;
 }
 
 /**

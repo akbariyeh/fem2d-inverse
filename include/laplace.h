@@ -29,8 +29,21 @@
 #include "shape_fcns_2d.h"
 #include "formulation_laplace.h"
 #include "boundary.h"
+#define R_interface 8.0
+
 
 template <typename P> class optimization_driver;
+
+template<typename T>
+T k_conductivity(T xv, T yv, T k_inner, T k_outer){
+  T r = sqrt(pow(xv,2)+pow(yv,2));
+  return (r < R_interface) ? k_inner : k_outer;
+}
+
+double k_conductivity( std::complex<double> xv,std::complex<double> yv, double kinner, double kouter) {
+  double r = sqrt(pow(xv.real(),2)+pow(yv.real(),2));
+  return (r < R_interface) ? kinner : kouter;
+}
 
 /***************************************************************\
  * This is the 2D, GFEM case.                                  *
@@ -62,6 +75,7 @@ class laplace {
     void apply_bc_dirichlet(const int boundary_index, const int variable_index, T value);
     void extract_slice(const std::string& slice_file) const;
     void set_problem_specific_data(const T d);
+    void set_problem_specific_data(const T k_inner, const T k_outer);
     inline void set_K(arma::Mat<T>& Kmat) { K = Kmat; };
     inline void set_f(arma::Col<T>& fvec) { F = fvec; };
     inline arma::Col<T> get_u() const { return u; };
@@ -69,9 +83,14 @@ class laplace {
     inline arma::Col<T> get_f() const { return F; };
     inline mesh<C> get_grid() const { return grid; };
     inline void set_grid(const mesh<C>& m) { grid = m; };
+    T condition() const { return arma::cond(K); };
+    T get_kinner() const { return kinner; };
+    T get_kouter() const { return kouter; };
 
   private:
     T k;
+    T kinner;
+    T kouter;
 };
 
 /**
@@ -208,11 +227,15 @@ void laplace<T,C>::integrate_element(const int npts, const element<T>& elem, arm
   // Getting weights and Gauss points
   gdata<T>(npts,gpts,w);
 
+  T xg,yg;
   // Numerically integrating using Gaussian quadrature
   for (int i=0; i<npts; ++i) {
     for (int j=0; j<npts; ++j) {
       sample_integrands<T>(elem,gpts[i],gpts[j],Ktmp,Ftmp);
-      Kelem += k*w[i]*w[j]*Ktmp;
+      xg = elem.get_coord(0,gpts[i],gpts[j]); 
+      yg = elem.get_coord(1,gpts[i],gpts[j]); 
+      Kelem += k_conductivity(xg,yg,kinner,kouter)*w[i]*w[j]*Ktmp;
+      //Kelem += k*w[i]*w[j]*Ktmp;
       Felem += w[i]*w[j]*Ftmp;
     }
   }
@@ -237,12 +260,15 @@ void laplace<T,C>::integrate_element_perturbed(const int npts, const element<C>&
 
   // Getting weights and Gauss points
   gdata<C>(npts,gpts,w);
-
+  C xg,yg;
   // Numerically integrating using Gaussian quadrature
   for (int i=0; i<npts; ++i) {
     for (int j=0; j<npts; ++j) {
       sample_integrands<C>(elem,gpts[i],gpts[j],Ktmp,Ftmp);
-      Kelem += C(k)*w[i]*w[j]*Ktmp;
+      //Kelem += C(k)*w[i]*w[j]*Ktmp;
+      xg = elem.get_coord(0,gpts[i],gpts[j]); 
+      yg = elem.get_coord(1,gpts[i],gpts[j]); 
+      Kelem += k_conductivity(xg,yg,kinner,kouter)*w[i]*w[j]*Ktmp;
       Felem += w[i]*w[j]*Ftmp;
     }
   }
@@ -296,6 +322,12 @@ void laplace<T,C>::apply_bc_dirichlet(const int boundary_index, const int variab
 template <typename T,typename C>
 void laplace<T,C>::set_problem_specific_data(const T d) {
   k = d;
+}
+
+template <typename T,typename C>
+void laplace<T,C>::set_problem_specific_data(const T k_inner, const T k_outer) {
+  kinner = k_inner;
+  kouter = k_outer;
 }
 
 /**

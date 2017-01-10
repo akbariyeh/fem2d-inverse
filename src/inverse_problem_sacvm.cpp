@@ -1,3 +1,4 @@
+#define VERBOSE
 #include <iostream>
 #include <fstream>
 #include <vector>
@@ -34,7 +35,7 @@ int main() {
 
   // Inputs for optimization
   unsigned int max_iterations = 500;
-  double dr = 1.0e-20;
+  double dr = 1.0e-6;
   double tolerance = 1.0e-3;
   bool use_sacvm = true;
 
@@ -78,11 +79,12 @@ int main() {
   laplace<double>* lp = new laplace<double>();
   opt.set_problem(lp);
   opt.set_qn_target(qn_target);
-
+  
+//  std::cout << "K.cond()=" << opt.get_problem().condition() << '\n';
   // Calling optimization function
-  std::cout << "Optimizing." << std::endl;
-  //std::vector<double> ri_opt = opt.optimize_steepest_descent(r_guess,max_iterations,dr,tolerance,use_sacvm);
-  //std::vector<double> ri_opt = opt.optimize_conjugate_direction(r_guess,max_iterations,dr,tolerance,use_sacvm);
+//  std::cout << "Optimizing." << std::endl;
+//  std::vector<double> ri_opt = opt.optimize_steepest_descent(r_guess,max_iterations,dr,tolerance,use_sacvm);
+// std::vector<double> ri_opt = opt.optimize_conjugate_direction(r_guess,max_iterations,dr,tolerance,use_sacvm);
   std::vector<double> ri_opt = opt.optimize_bfgs(r_guess,max_iterations,dr,tolerance,use_sacvm);
 
   delete lp;

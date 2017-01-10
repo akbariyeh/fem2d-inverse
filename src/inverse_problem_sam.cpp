@@ -34,7 +34,7 @@ int main() {
 
   // Inputs for optimization
   unsigned int max_iterations = 300;
-  double dr = 1.0e-6;
+  double dr = 1.0e-10;
   double tolerance = 1.0e-3;
   bool use_sacvm = false;
 
@@ -81,7 +81,13 @@ int main() {
 
   // Calling optimization function
   std::cout << "Optimizing." << std::endl;
-  std::vector<double> ri_opt = opt.optimize_steepest_descent(r_guess,max_iterations,dr,tolerance,use_sacvm);
+  std::vector<size_t> index(r_guess.size());
+  std::iota(index.begin(),index.end(),0);
+  opt.get_problem().set_problem_specific_data(1,1); // first argument is not used. second is kmin,third is kmax
+  opt.sensitivity_study(r_guess,index,1e-8);
+  
+  //std::vector<double> ri_opt = opt.optimize_steepest_descent(r_guess,max_iterations,dr,tolerance,use_sacvm);
+  //std::vector<double> ri_opt = opt.optimize_steepest_descent(r_guess,max_iterations,dr,tolerance,true);
   //std::vector<double> ri_opt = opt.optimize_conjugate_direction(r_guess,max_iterations,dr,tolerance,use_sacvm);
 
   delete lp;

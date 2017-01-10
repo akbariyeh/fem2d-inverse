@@ -59,6 +59,9 @@ int main() {
   p.solve();
   p.write_tecplot("T_target.tec");
 
+  // Finding condition number
+  std::cout << "Condition number is " << p.condition() << std::endl;
+
   // Computing the normal heat flux
   opt_driver<laplace<double> > opt(&p);
   std::cout << "Computing normal heat flux." << std::endl;

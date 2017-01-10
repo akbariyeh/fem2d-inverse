@@ -23,10 +23,12 @@
 #include "laplace.h"
 
 #define tau 0.381966
-#define TINNER 373.0
-#define TOUTER 283.0
+//#define TINNER 373.0
+//#define TOUTER 283.0
+#define TINNER (2283.0+0.0e6) 
+#define TOUTER ( 283.0+0.0e6)
 #define RO 10.0
-#define cond 10.0
+#define cond_default 10.0   // This is not used
 #define IMAX 51
 #define JMAX 20
 
@@ -39,9 +41,9 @@ class opt_driver {
 
   public:
     typedef typename P::VT VT;
-    opt_driver() { imax=IMAX; jmax=JMAX; r_o=RO; k=cond; T_inner=TINNER; T_outer=TOUTER; };
-    opt_driver(P* prob) : p{prob} { imax=IMAX; jmax=JMAX; r_o=RO; k=cond; T_inner=TINNER; T_outer=TOUTER; };
-    opt_driver(P* prob, const std::vector<VT>& q_target) : p{prob}, qn_target{q_target} { imax=IMAX; jmax=JMAX; r_o=RO; k=cond; T_inner=TINNER; T_outer=TOUTER; };
+    opt_driver() { imax=IMAX; jmax=JMAX; r_o=RO; k=cond_default; T_inner=TINNER; T_outer=TOUTER; };
+    opt_driver(P* prob) : p{prob} { imax=IMAX; jmax=JMAX; r_o=RO; k=cond_default; T_inner=TINNER; T_outer=TOUTER; };
+    opt_driver(P* prob, const std::vector<VT>& q_target) : p{prob}, qn_target{q_target} { imax=IMAX; jmax=JMAX; r_o=RO; k=cond_default; T_inner=TINNER; T_outer=TOUTER; };
     std::vector<VT> normal_heat_flux() const;
     template <typename U> U f(const arma::Col<U>& T, const mesh<U>& g) const;
     template <typename U> U objective_function(const std::vector<U>& design_var);
@@ -49,14 +51,18 @@ class opt_driver {
     VT compute_sensitivities_cvm(const std::vector<VT>& dr_inner);
     VT compute_sensitivities_safdm(const std::vector<VT>& dr_inner);
     VT compute_sensitivities_sacvm(const std::vector<VT>& dr_inner);
+    VT compute_sensitivities_safdm(const std::vector<VT>& dr_inner,VT& n_u,VT& n_du);
     std::vector<VT> optimize_steepest_descent(const std::vector<VT>& r_guess, const unsigned int max_iter, const VT dr, const VT tol, const bool use_sacvm=false);
     std::vector<VT> optimize_conjugate_direction(const std::vector<VT>& r_guess, const unsigned int max_iter, const VT dr, const VT tol, const bool use_sacvm=false);
     std::vector<VT> optimize_bfgs(const std::vector<VT>& r_guess, const unsigned int max_iter, const VT dr, const VT tol, const bool use_sacvm=false);
+    void sensitivity_study(const std::vector<VT>& r_guess,std::vector<size_t> index,VT dr_i);
+    void digits_study(const std::vector<VT>& r_guess);
 
     // Simple inline methods
     inline int get_imax() const { return imax; };
     inline int get_jmax() const { return jmax; };
     inline void set_problem(P* prob) { p = prob; };
+    inline P& get_problem() { return *p; };
     inline void set_qn_target(const std::vector<VT>& qn_t) { qn_target = qn_t; };
 
   private:
@@ -76,6 +82,52 @@ class opt_driver {
 /***************************************************************\
  * Class implementation                                        *
 \***************************************************************/
+
+/**
+ * Member function to carry on significant digits study of safdm
+ *
+ * @return void
+ */
+
+template<typename P>
+void opt_driver<P>::digits_study(const std::vector<VT>& r_guess){
+  
+}
+
+/**
+ * Member function to carry on sensitivity comparision between
+ * multiple available methods
+ *
+ * @return void
+ */
+
+template <typename P>
+void opt_driver<P>::sensitivity_study(const std::vector<VT>& r_guess,std::vector<size_t> index,VT dr_i) {
+  // Declaring variables
+  std::vector<VT> dr(r_guess.size(),VT{0.0});
+  std::vector<VT> S_safdm(index.size(),VT{0.0});
+  std::vector<VT> S_sacvm(index.size(),VT{0.0});
+  
+  // Writing initial guess data to file
+  p->discretize(imax,jmax,r_guess,r_o);
+  std::cout<< "cond(K) = " << p->condition() << ", dr[i]="<< dr_i <<'\n';
+  p->apply_bc_dirichlet(0,0,T_inner);
+  p->apply_bc_dirichlet(1,0,T_outer);
+  p->solve();
+  //std::cout<< "cond(K) = " << p->condition_adj() << "  after bc dirichlet\n";
+  std::cout<< "cond(K) = " << p->condition() << ", dr[i]="<< dr_i <<'\n';
+  std::cout<< std::setw(3) << "i" <<'\t'<< std::setw(12) << "sacvm" << '\t'<< std::setw(12)<< "safdm"<<std::setw(12)<<"\%err"<<'\n';
+  VT n_u,n_du;
+  for (size_t i=0; i<index.size(); ++i){
+    dr[index[i]] = dr_i;
+    S_safdm[i] = compute_sensitivities_safdm(dr,n_u,n_du);
+    S_sacvm[i] = compute_sensitivities_sacvm(dr);
+    dr[index[i]] = VT{0.0};
+    //std::cout<< std::setw(3) << index[i] <<'\t'<< std::setw(12) <<  S_sacvm[i] << '\t'<< std::setw(12)<< S_safdm[i] << '\t'<< std::setw(12) << (S_safdm[i]-S_sacvm[i])/S_sacvm[i]*100.0 <<'\t'<<n_u<<'\t'<<n_du<< '\t'<< n_du/n_u << '\n';
+    std::cout<< std::setw(3) << index[i] <<'\t'<< std::setw(12) <<  S_sacvm[i] << '\t'<< std::setw(12)<< S_safdm[i] << '\t'<< std::setw(12) << (S_safdm[i]-S_sacvm[i])/S_sacvm[i]*100.0 << '\n';
+  }
+
+}
 
 /**
  * Member function for computing the normal heat flux at the outer
@@ -172,7 +224,7 @@ U opt_driver<P>::objective_function(const std::vector<U>& design_vars) {
 
   // Setting thermal conductivity
   laplace<U> ptmp;
-  ptmp.set_problem_specific_data(k);
+  ptmp.set_problem_specific_data(p->get_kinner(),p->get_kouter());
 
   // Generating grid and assembling system
   ptmp.discretize(imax,jmax,design_vars,r_o);
@@ -218,7 +270,7 @@ typename opt_driver<P>::VT opt_driver<P>::compute_sensitivities_fdm(const std::v
 
   // Evaluating objective function: f(r+dr)
   P ptmp;
-  ptmp.set_problem_specific_data(k);
+  ptmp.set_problem_specific_data(p->get_kinner(),p->get_kouter());
   ptmp.discretize(imax,jmax,rpdr,r_o);
   ptmp.apply_bc_dirichlet(0,0,T_inner);
   ptmp.apply_bc_dirichlet(1,0,T_outer);
@@ -253,8 +305,10 @@ typename opt_driver<P>::VT opt_driver<P>::compute_sensitivities_cvm(const std::v
   }
 
   // Evaluating objective function: f(r+dr)
-  return (objective_function<std::complex<VT> >(rpdr)).imag()/dr_i;
-
+  VT dfdr_i =(objective_function<std::complex<VT> >(rpdr)).imag()/dr_i;
+  
+  std::cout<< p->condition() << ',' << dfdr_i <<'\n';
+  return dfdr_i;
 }
 
 /**
@@ -278,8 +332,8 @@ typename opt_driver<P>::VT opt_driver<P>::compute_sensitivities_safdm(const std:
   P p_pdr,p_mdr;
 
   // Setting thermal conductivity
-  p_pdr.set_problem_specific_data(k);
-  p_mdr.set_problem_specific_data(k);
+  p_pdr.set_problem_specific_data(p->get_kinner(),p->get_kouter());
+  p_mdr.set_problem_specific_data(p->get_kinner(),p->get_kouter());
 
   // Assembling K(x+dx)
   p_pdr.discretize(imax,jmax,r_perturbed,r_o);
@@ -306,7 +360,7 @@ typename opt_driver<P>::VT opt_driver<P>::compute_sensitivities_safdm(const std:
   // Applying boundary conditions
   int nnodes = p_pdr.get_grid().get_num_nodes();
   arma::Col<VT> du(nnodes);
-
+  
   // Computing du
   //du = Ki*(df - dK*(p->get_u()));
   arma::solve(du,p->get_K(),df - dK*(p->get_u()));
@@ -319,9 +373,82 @@ typename opt_driver<P>::VT opt_driver<P>::compute_sensitivities_safdm(const std:
   VT fumdu = f<VT>(umdu,p_mdr.get_grid());
   VT dfdr_i = (fupdu - fumdu)/(2.0*dr_i);
 
+  //std::cout<< p->condition() << ',' << dfdr_i <<'\n';
+
+  //arma::norm(df);
+  
   return dfdr_i;
 
 }
+template <typename P>
+typename opt_driver<P>::VT opt_driver<P>::compute_sensitivities_safdm(const std::vector<VT>& dr_inner,VT& n_u,VT& n_du) {
+
+  // Finding the step size and finding the perturbed radius
+  mesh<VT> gtmp = p->get_grid();
+  std::vector<VT> r_original = gtmp.get_r_inner();
+  std::transform(dr_inner.begin(),dr_inner.end(),r_original.begin(),r_original.begin(),std::plus<VT>());
+  VT dr_i = std::accumulate(dr_inner.begin(),dr_inner.end(),VT(0));  // assuming one nonzero entry
+  std::vector<VT> r_perturbed = r_original;
+
+  // Creating a new problem object to manipulate
+  P p_pdr,p_mdr;
+
+  // Setting thermal conductivity
+  p_pdr.set_problem_specific_data(p->get_kinner(),p->get_kouter());
+  p_mdr.set_problem_specific_data(p->get_kinner(),p->get_kouter());
+
+  // Assembling K(x+dx)
+  p_pdr.discretize(imax,jmax,r_perturbed,r_o);
+  p_pdr.apply_bc_dirichlet(0,0,T_inner);
+  p_pdr.apply_bc_dirichlet(1,0,T_outer);
+  arma::Mat<VT> K_xpdx = p_pdr.get_K();
+  arma::Col<VT> f_xpdx = p_pdr.get_f();
+
+  // Assembling K(x-dx)
+  r_original = (p->get_grid()).get_r_inner();
+  for (int i=0; i<dr_inner.size(); ++i) {
+    r_perturbed[i] = r_original[i] - dr_inner[i];
+  }
+  p_mdr.discretize(imax,jmax,r_perturbed,r_o);
+  p_mdr.apply_bc_dirichlet(0,0,T_inner);
+  p_mdr.apply_bc_dirichlet(1,0,T_outer);
+  arma::Mat<VT> K_xmdx = p_mdr.get_K();
+  arma::Col<VT> f_xmdx = p_mdr.get_f();
+
+  // Computing Delta K = (K(x+dx) - K(x-dx))/2 
+  arma::Mat<VT> dK = 0.5*(K_xpdx - K_xmdx);
+  arma::Col<VT> df = 0.5*(f_xpdx - f_xmdx);
+
+    // Applying boundary conditions
+  int nnodes = p_pdr.get_grid().get_num_nodes();
+  arma::Col<VT> du(nnodes);
+  
+  // Computing du
+  //du = Ki*(df - dK*(p->get_u()));
+  arma::solve(du,p->get_K(),df - dK*(p->get_u()));
+  arma::Col<VT> temp_v(p->get_u()+du);
+  temp_v -= p->get_u();
+  temp_v = du - temp_v;
+  n_u  =  arma::norm(p->get_u());
+  n_du =  arma::norm(temp_v);
+  // Computing df/dx = (f(u + Delta u) - f(u - Delta u))/(2 Delta u) (Delta u / Delta x)
+  // which can be simplified to df/dx = (f(u+du) - f(u-du))/(2 dx)
+  arma::Col<VT> updu = p->get_u() + du;
+  arma::Col<VT> umdu = p->get_u() - du;
+  VT fupdu = f<VT>(updu,p_pdr.get_grid());
+  VT fumdu = f<VT>(umdu,p_mdr.get_grid());
+  VT dfdr_i = (fupdu - fumdu)/(2.0*dr_i);
+
+  //std::cout<< p->condition() << ',' << dfdr_i <<'\n';
+
+  //arma::norm(df);
+  
+  return dfdr_i;
+
+}
+
+
+
 
 /**
  * Member function for computing the sensitivities using the semi-analytic
@@ -335,7 +462,7 @@ typename opt_driver<P>::VT opt_driver<P>::compute_sensitivities_sacvm(const std:
 
   // Creating a new problem
   laplace<VT,std::complex<VT> > p_perturbed;
-  p_perturbed.set_problem_specific_data(k);
+  p_perturbed.set_problem_specific_data(p->get_kinner(),p->get_kouter());
 
   // Creating complex vector of original design variables with complex perturbation added in
   std::vector<std::complex<VT> > rpdr(dr_inner.size());
@@ -374,7 +501,10 @@ typename opt_driver<P>::VT opt_driver<P>::compute_sensitivities_sacvm(const std:
 
   // Finding df/dx
   arma::Col<std::complex<VT> > updu(p->get_u(),du);
-  return (f<std::complex<VT> >(updu,p_perturbed.get_grid())).imag()/dr_i;
+  
+  VT dfdr_i = (f<std::complex<VT> >(updu,p_perturbed.get_grid())).imag()/dr_i;
+  //std::cout<< arma::cond(p->get_K()) << ',' << dfdr_i <<'\n';
+  return dfdr_i;
   
 }
 
@@ -409,7 +539,7 @@ std::vector<typename opt_driver<P>::VT> opt_driver<P>::optimize_steepest_descent
   xmax = 10.0;
   
   // Writing initial guess data to file
-  p->set_problem_specific_data(k);
+  p->set_problem_specific_data(p->get_kinner(),p->get_kouter());
   p->discretize(imax,jmax,X,r_o);
   p->apply_bc_dirichlet(0,0,T_inner);
   p->apply_bc_dirichlet(1,0,T_outer);
@@ -448,6 +578,7 @@ std::vector<typename opt_driver<P>::VT> opt_driver<P>::optimize_steepest_descent
 
         // Calling member function to compute the sensitivity
         S[j] = VT(-1)*compute_sensitivities_sacvm(dX);
+        //S[j] = VT(-1)*compute_sensitivities_cvm(dX);
 
       }
       std::cout << std::endl;
@@ -477,7 +608,6 @@ std::vector<typename opt_driver<P>::VT> opt_driver<P>::optimize_steepest_descent
 
         // Calling member function to compute the sensitivity
         S[j] = VT(-1)*compute_sensitivities_safdm(dX);
-
       }
       std::cout << std::endl;
 
@@ -526,7 +656,7 @@ std::vector<typename opt_driver<P>::VT> opt_driver<P>::optimize_steepest_descent
       X[j] += alpha_opt*S[j];
     }
     F = objective_function(X);
-    p->set_problem_specific_data(k);
+    p->set_problem_specific_data(p->get_kinner(),p->get_kouter());
     p->discretize(imax,jmax,X,r_o);
     p->apply_bc_dirichlet(0,0,T_inner);
     p->apply_bc_dirichlet(1,0,T_outer);
@@ -589,7 +719,7 @@ std::vector<typename opt_driver<P>::VT> opt_driver<P>::optimize_bfgs(const std::
   
   // Writing initial guess data to file
   Xhist.push_back(X);
-  p->set_problem_specific_data(k);
+  p->set_problem_specific_data(p->get_kinner(),p->get_kouter());
   p->discretize(imax,jmax,X,r_o);
   p->apply_bc_dirichlet(0,0,T_inner);
   p->apply_bc_dirichlet(1,0,T_outer);
@@ -728,7 +858,7 @@ std::vector<typename opt_driver<P>::VT> opt_driver<P>::optimize_bfgs(const std::
       X[j] += alpha_opt*S[j];
     }
     Xhist.push_back(X);
-    p->set_problem_specific_data(k);
+    p->set_problem_specific_data(p->get_kinner(),p->get_kouter());
     p->discretize(imax,jmax,X,r_o);
     p->apply_bc_dirichlet(0,0,T_inner);
     p->apply_bc_dirichlet(1,0,T_outer);
