@@ -29,7 +29,7 @@
 #include "shape_fcns_2d.h"
 #include "formulation_laplace.h"
 #include "boundary.h"
-#define R_interface 8.0
+#define R_interface 9.0
 
 
 template <typename P> class optimization_driver;
@@ -109,7 +109,7 @@ void laplace<T,C>::discretize(const int imax, const int jmax, const std::vector<
 #endif
 
   // Generating mesh
-  grid = mesh<T>(imax,jmax,r_i,r_o);
+  grid = mesh<T>(imax,jmax,r_i,r_o,R_interface);
 
 #ifdef VERBOSE
   std::cout << "Done generating mesh." << std::endl;
@@ -176,7 +176,7 @@ template <typename T,typename C>
 void laplace<T,C>::discretize_perturbed(const int imax, const int jmax, const std::vector<C>& r_i, const T r_o) {
 
   // Generating mesh
-  grid = mesh<C>(imax,jmax,r_i,C(r_o,T{0.0}));
+  grid = mesh<C>(imax,jmax,r_i,C(r_o,T{0.0}),T{R_interface});
 
   // Setting up some variables
   int nnodes = grid.get_num_nodes();

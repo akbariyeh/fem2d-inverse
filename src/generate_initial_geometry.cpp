@@ -52,10 +52,10 @@ int main() {
 
   // Solving for the temperature field
   laplace<double> p;
-  p.set_problem_specific_data(10.0);   // k       = 10 W/(m-K)
+  p.set_problem_specific_data(0.05,300);   // k       = 10 W/(m-K)
   p.discretize(imax,jmax,r,r_outer);
-  p.apply_bc_dirichlet(0,0,373.0);     // T_inner = 100 deg C
-  p.apply_bc_dirichlet(1,0,283.0);     // T_outer =  10 deg C
+  p.apply_bc_dirichlet(0,0,TINNER);     // T_inner = 2020 deg C
+  p.apply_bc_dirichlet(1,0,TOUTER);     // T_outer =   20 deg C
   p.solve();
   p.write_tecplot("T_target.tec");
 

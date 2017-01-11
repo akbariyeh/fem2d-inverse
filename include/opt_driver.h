@@ -25,8 +25,8 @@
 #define tau 0.381966
 //#define TINNER 373.0
 //#define TOUTER 283.0
-#define TINNER (2283.0+0.0e6) 
-#define TOUTER ( 283.0+0.0e6)
+#define TINNER (2283.0+1.0e6) 
+#define TOUTER ( 283.0+1.0e6)
 #define RO 10.0
 #define cond_default 10.0   // This is not used
 #define IMAX 51
@@ -51,7 +51,8 @@ class opt_driver {
     VT compute_sensitivities_cvm(const std::vector<VT>& dr_inner);
     VT compute_sensitivities_safdm(const std::vector<VT>& dr_inner);
     VT compute_sensitivities_sacvm(const std::vector<VT>& dr_inner);
-    VT compute_sensitivities_safdm(const std::vector<VT>& dr_inner,VT& n_u,VT& n_du);
+    VT compute_sensitivities_safdm(const std::vector<VT>& dr_inner,arma::Col<VT>& ref_du);
+    VT compute_sensitivities_sacvm(const std::vector<VT>& dr_inner,arma::Col<VT>& ref_du);
     std::vector<VT> optimize_steepest_descent(const std::vector<VT>& r_guess, const unsigned int max_iter, const VT dr, const VT tol, const bool use_sacvm=false);
     std::vector<VT> optimize_conjugate_direction(const std::vector<VT>& r_guess, const unsigned int max_iter, const VT dr, const VT tol, const bool use_sacvm=false);
     std::vector<VT> optimize_bfgs(const std::vector<VT>& r_guess, const unsigned int max_iter, const VT dr, const VT tol, const bool use_sacvm=false);
@@ -116,15 +117,16 @@ void opt_driver<P>::sensitivity_study(const std::vector<VT>& r_guess,std::vector
   p->solve();
   //std::cout<< "cond(K) = " << p->condition_adj() << "  after bc dirichlet\n";
   std::cout<< "cond(K) = " << p->condition() << ", dr[i]="<< dr_i <<'\n';
-  std::cout<< std::setw(3) << "i" <<'\t'<< std::setw(12) << "sacvm" << '\t'<< std::setw(12)<< "safdm"<<std::setw(12)<<"\%err"<<'\n';
-  VT n_u,n_du;
+  std::cout<< std::setw(3) << "i" <<'\t'<< std::setw(12) << "sacvm" << '\t'<< std::setw(12)<< "safdm"<<'\t' << std::setw(12)<<"\%err"<<'\t' << std::setw(23)<<"n(du/dr error) / n(du)"<<'\n';
+  arma::Col<VT> du_SAM,du_SACVM;
+  VT normRatio;
   for (size_t i=0; i<index.size(); ++i){
     dr[index[i]] = dr_i;
-    S_safdm[i] = compute_sensitivities_safdm(dr,n_u,n_du);
-    S_sacvm[i] = compute_sensitivities_sacvm(dr);
+    S_safdm[i] = compute_sensitivities_safdm(dr,du_SAM);
+    S_sacvm[i] = compute_sensitivities_sacvm(dr,du_SACVM);
     dr[index[i]] = VT{0.0};
-    //std::cout<< std::setw(3) << index[i] <<'\t'<< std::setw(12) <<  S_sacvm[i] << '\t'<< std::setw(12)<< S_safdm[i] << '\t'<< std::setw(12) << (S_safdm[i]-S_sacvm[i])/S_sacvm[i]*100.0 <<'\t'<<n_u<<'\t'<<n_du<< '\t'<< n_du/n_u << '\n';
-    std::cout<< std::setw(3) << index[i] <<'\t'<< std::setw(12) <<  S_sacvm[i] << '\t'<< std::setw(12)<< S_safdm[i] << '\t'<< std::setw(12) << (S_safdm[i]-S_sacvm[i])/S_sacvm[i]*100.0 << '\n';
+    normRatio = arma::norm(du_SACVM/dr_i - du_SAM/dr_i)/arma::norm(du_SACVM/dr_i);
+    std::cout<< std::setw(3) << index[i] <<'\t'<< std::setw(12) <<  S_sacvm[i] << '\t'<< std::setw(12)<< S_safdm[i] << '\t'<< std::setw(12) << (S_safdm[i]-S_sacvm[i])/S_sacvm[i]*100.0 << '\t' << std::setw(23) << normRatio << '\n';
   }
 
 }
@@ -381,7 +383,7 @@ typename opt_driver<P>::VT opt_driver<P>::compute_sensitivities_safdm(const std:
 
 }
 template <typename P>
-typename opt_driver<P>::VT opt_driver<P>::compute_sensitivities_safdm(const std::vector<VT>& dr_inner,VT& n_u,VT& n_du) {
+typename opt_driver<P>::VT opt_driver<P>::compute_sensitivities_safdm(const std::vector<VT>& dr_inner, arma::Col<VT>& ref_du ) {
 
   // Finding the step size and finding the perturbed radius
   mesh<VT> gtmp = p->get_grid();
@@ -426,11 +428,7 @@ typename opt_driver<P>::VT opt_driver<P>::compute_sensitivities_safdm(const std:
   // Computing du
   //du = Ki*(df - dK*(p->get_u()));
   arma::solve(du,p->get_K(),df - dK*(p->get_u()));
-  arma::Col<VT> temp_v(p->get_u()+du);
-  temp_v -= p->get_u();
-  temp_v = du - temp_v;
-  n_u  =  arma::norm(p->get_u());
-  n_du =  arma::norm(temp_v);
+  ref_du = du ;
   // Computing df/dx = (f(u + Delta u) - f(u - Delta u))/(2 Delta u) (Delta u / Delta x)
   // which can be simplified to df/dx = (f(u+du) - f(u-du))/(2 dx)
   arma::Col<VT> updu = p->get_u() + du;
@@ -442,7 +440,6 @@ typename opt_driver<P>::VT opt_driver<P>::compute_sensitivities_safdm(const std:
   //std::cout<< p->condition() << ',' << dfdr_i <<'\n';
 
   //arma::norm(df);
-  
   return dfdr_i;
 
 }
@@ -507,6 +504,59 @@ typename opt_driver<P>::VT opt_driver<P>::compute_sensitivities_sacvm(const std:
   return dfdr_i;
   
 }
+
+template <typename P>
+typename opt_driver<P>::VT opt_driver<P>::compute_sensitivities_sacvm(const std::vector<VT>& dr_inner,arma::Col<VT>& ref_du) {
+
+  // Creating a new problem
+  laplace<VT,std::complex<VT> > p_perturbed;
+  p_perturbed.set_problem_specific_data(p->get_kinner(),p->get_kouter());
+
+  // Creating complex vector of original design variables with complex perturbation added in
+  std::vector<std::complex<VT> > rpdr(dr_inner.size());
+  std::vector<VT> r_inner = p->get_grid().get_r_inner();
+  VT dr_i = VT(0.0);
+  for (int i=0; i<dr_inner.size(); ++i) {
+    rpdr[i] = std::complex<VT>(r_inner[i],dr_inner[i]);
+    dr_i += dr_inner[i];
+  }
+
+  // Discretizing
+  p_perturbed.discretize_perturbed(imax,jmax,rpdr,r_o);
+
+  // Applying boundary conditions
+  // IMPORTANT NOTE: The below application of boundary conditions to the imaginary part
+  // of the perturbation in K and f is equivalent to zeroing out the rows for the nodes
+  // which are on the boundary.  This is a statement of the fact that the temperature
+  // solution is not sensitive on boundary nodes because there is a Dirichlet boundary
+  // condition there.  What about Neumann?  
+  // More specifically, dK * u = df for boundary nodes, assuming that you solved for u
+  // properly in the first place
+  p_perturbed.apply_bc_dirichlet(0,0,T_inner);
+  p_perturbed.apply_bc_dirichlet(1,0,T_outer);
+
+  // Finding dK
+  arma::Mat<VT> dK = p_perturbed.get_K();
+  arma::Col<VT> df = p_perturbed.get_f();
+
+  // Finding du
+  // K u = f
+  // K du + dK u = df
+  // du = K^(-1) ( df - dK u )
+  //arma::Col<VT> du = (p->get_Kinv())*(df - dK*(p->get_u())) ;  // this is bad...
+  arma::Col<VT> du(df.n_elem); 
+  arma::solve(du,p->get_K(),df - dK*(p->get_u()));
+  ref_du = du;
+  // Finding df/dx
+  arma::Col<std::complex<VT> > updu(p->get_u(),du);
+  
+  VT dfdr_i = (f<std::complex<VT> >(updu,p_perturbed.get_grid())).imag()/dr_i;
+  //std::cout<< arma::cond(p->get_K()) << ',' << dfdr_i <<'\n';
+  return dfdr_i;
+  
+}
+
+
 
 /**
  * Method for performing the optimization using steepest descent.
@@ -737,13 +787,13 @@ std::vector<typename opt_driver<P>::VT> opt_driver<P>::optimize_bfgs(const std::
     if (use_sacvm) {
 
       // Computing sensitivities using the semi-analytic complex variable method
-      std::cout << "Computing sensitivity for variable: " << std::endl;
+//ASH      std::cout << "Computing sensitivity for variable: " << std::endl;
       for (unsigned int j=0; j<imax-1; ++j) {
 
-        std::cout << std::setw(3);
-        std::cout << j << " " << std::flush;
+//ASH        std::cout << std::setw(3);
+//ASH        std::cout << j << " " << std::flush;
         if ((j+1)%20==0) {
-          std::cout << std::endl;
+//ASH          std::cout << std::endl;
         }
 
         // Setting up vector for step size
@@ -759,19 +809,19 @@ std::vector<typename opt_driver<P>::VT> opt_driver<P>::optimize_bfgs(const std::
         // Calling member function to compute the sensitivity
         gradF[j] = compute_sensitivities_sacvm(dX);
       }
-      std::cout << std::endl;
+//ASH      std::cout << std::endl;
 
     }
     else {
 
       // Computing sensitivities using the semi-analytic finite difference method
-      std::cout << "Computing sensitivity for variable: " << std::endl;
+//ASH      std::cout << "Computing sensitivity for variable: " << std::endl;
       for (unsigned int j=0; j<imax-1; ++j) {
 
-        std::cout << std::setw(3);
-        std::cout << j << " " << std::flush;
+//ASH        std::cout << std::setw(3);
+//ASH        std::cout << j << " " << std::flush;
         if ((j+1)%20==0) {
-          std::cout << std::endl;
+//ASH          std::cout << std::endl;
         }
 
         // Setting up vector for step size
@@ -788,7 +838,7 @@ std::vector<typename opt_driver<P>::VT> opt_driver<P>::optimize_bfgs(const std::
         gradF[j] = compute_sensitivities_safdm(dX);
 
       }
-      std::cout << std::endl;
+//ASH      std::cout << std::endl;
 
     }
 
@@ -819,7 +869,9 @@ std::vector<typename opt_driver<P>::VT> opt_driver<P>::optimize_bfgs(const std::
 
 
     // Performing 1D search to find minimum along the direction of steepest descent
-    std::cout << "Starting 1D search on iteration " << i << std::endl;
+//ASH    std::cout << "Starting 1D search on iteration " << i << std::endl;
+    std::cout << std::setw(3) << i ;  //ASHKAN
+
     K = 3;
     xu = 2.0*alpha_opt;
     xl = 0.0;
@@ -864,7 +916,8 @@ std::vector<typename opt_driver<P>::VT> opt_driver<P>::optimize_bfgs(const std::
     p->apply_bc_dirichlet(1,0,T_outer);
     p->solve();
     F = objective_function<VT>(X);
-    printf("Objective function value: %1.6e\n",F);
+//ASH    printf("Objective function value: %1.6e\n",F);
+    printf("\t%1.6e\n",F); //ASHKAN
     Fhist.push_back(F);
 
     // Checking tolerance

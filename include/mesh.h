@@ -19,6 +19,7 @@
 #include <string>
 #include <cstdlib>
 #include <algorithm>
+#include <cmath>
 #include <initializer_list>
 #include <fstream>
 #include "node.h"
@@ -36,6 +37,7 @@ class mesh {
   public:
     mesh();
     mesh(const int iMax, const int jMax, const std::vector<T>& R_inner, const T R_outer);
+    mesh(const int iMax, const int jMax, const std::vector<T>& R_inner, const T R_outer,const T R_casing);
     mesh(const std::string filename);
     int get_num_nodes() const;
     int get_num_elements() const;
@@ -91,7 +93,112 @@ mesh<T>::mesh() {
  * @param[in] 
  */
 template <typename T> 
-mesh<T>::mesh(const int iMax, const int jMax, const std::vector<T>& R_inner, const T R_outer) {
+ mesh<T>::mesh(const int iMax, const int jMax, const std::vector<T>& R_inner, const T R_outer) {
+
+   // Setting some inputs
+   r_inner = R_inner;
+   imax = iMax;
+   jmax = jMax;
+   nnodes = (imax-1)*jmax;
+   nelements = (imax-1)*(jmax-1);
+   nbelements = 2*(imax-1);
+
+   // Allocating some class members
+   nodes.resize(nnodes);
+   elements.resize(nelements);
+   belem.resize(nbelements);
+   boundaries.resize(2);
+
+   // Initializing some variables
+   arma::Mat<T> r(imax-1,jmax);
+   std::vector<T> theta(imax);
+
+   // Computing necessary steps for r- and theta-directions
+   T dtheta = 2.0*M_PI/(T(imax)-1.0);
+   std::vector<T> dr(imax-1);
+   //std::transform(R_inner.begin(),R_inner.end(),dr.begin(),[&](T Ri) {return (R_outer-Ri)/(T(jmax)-1.0); });
+   for (int i=0; i<imax-1; ++i) {
+     dr[i] = (R_outer - R_inner[i])/(T(jmax)-1.0);
+   }
+
+   // Computing r- and theta-coordinates for mesh
+   for (int i=0; i<imax-1; ++i) {
+     theta[i] = T(i)*dtheta;
+     for (int j=0; j<jmax; ++j) {
+       r(i,j) = R_inner[i] + T(j)*dr[i];
+     }
+   }
+
+   // Creating x-y coordinates for nodes and instantiating node objects
+   for (int i=0; i<imax-1; ++i) {
+     for (int j=0; j<jmax; ++j) {
+       nodes[i*jmax+j] = node<T>(r(i,j)*cos(theta[i]),r(i,j)*sin(theta[i]));
+     }
+   } 
+
+   // Creating element objects
+   std::vector<int> con_tmp(4);
+   std::vector<node<T> > node_tmp(4);
+   int idx_sw, idx_se, idx_ne, idx_nw;
+   for (int i=0; i<imax-2; ++i) {
+     for (int j=0; j<jmax-1; ++j) { 
+
+       // Filling in indices 
+       idx_sw = i*jmax+j;
+       idx_ne = (i+1)*jmax+j+1;
+       //idx_se = (i+1)*jmax+j;
+       //idx_nw = i*jmax+j+1;
+       idx_nw = (i+1)*jmax+j;
+       idx_se = i*jmax+j+1;
+
+       // Populating node and connectivity vectors
+       con_tmp = std::vector<int>{idx_sw, idx_se, idx_ne, idx_nw};
+       node_tmp = std::vector<node<T> >{nodes[idx_sw],nodes[idx_se],nodes[idx_ne],nodes[idx_nw]};
+
+       // Instantiating elements
+       elements[i*(jmax-1)+j] = element<T>(con_tmp,node_tmp);
+
+     }
+   }
+
+   // This is the final slice in the j-direction which requires information
+   // from the first slice in the j-direction.
+   for (int j=0; j<jmax-1; ++j) {
+
+     // Filling in indices
+     idx_sw = (imax-2)*jmax+j;
+     idx_ne = j+1;
+     //idx_se = j;
+     //idx_nw = (imax-2)*jmax+j+1;
+     idx_nw = j;
+     idx_se = (imax-2)*jmax+j+1;
+
+     // Populating node and connectivity vectors
+     con_tmp = std::vector<int>{idx_sw, idx_se, idx_ne, idx_nw};
+     node_tmp = std::vector<node<T> >{nodes[idx_sw],nodes[idx_se],nodes[idx_ne],nodes[idx_nw]};
+
+     // Instantiating elements
+     elements[(imax-2)*(jmax-1)+j] = element<T>(con_tmp,node_tmp);
+   }
+
+   // Creating boundary elements
+   std::vector<std::vector<int> > belem_inner(imax-1);
+   std::vector<std::vector<int> > belem_outer(imax-1);
+   for (int i=0; i<imax-2; ++i) {
+     belem_inner[i] = std::vector<int>({i*jmax,(i+1)*jmax});
+     belem_outer[i] = std::vector<int>({(i+1)*jmax-1,(i+2)*jmax-1});
+   }
+   belem_inner[imax-2] = std::vector<int>({(imax-2)*jmax,0}); 
+   belem_outer[imax-2] = std::vector<int>({(imax-2)*jmax+jmax-1,jmax-1});  
+
+   // Creating boundaries
+   boundaries[0] = boundary(0,belem_inner);
+   boundaries[1] = boundary(1,belem_outer);
+
+ }
+
+template <typename T> 
+mesh<T>::mesh(const int iMax, const int jMax, const std::vector<T>& R_inner, const T R_outer,const T R_casing) {
 
   // Setting some inputs
   r_inner = R_inner;
@@ -100,6 +207,8 @@ mesh<T>::mesh(const int iMax, const int jMax, const std::vector<T>& R_inner, con
   nnodes = (imax-1)*jmax;
   nelements = (imax-1)*(jmax-1);
   nbelements = 2*(imax-1);
+
+  int j_casing = jmax - 3;
 
   // Allocating some class members
   nodes.resize(nnodes);
@@ -116,15 +225,19 @@ mesh<T>::mesh(const int iMax, const int jMax, const std::vector<T>& R_inner, con
   std::vector<T> dr(imax-1);
   //std::transform(R_inner.begin(),R_inner.end(),dr.begin(),[&](T Ri) {return (R_outer-Ri)/(T(jmax)-1.0); });
   for (int i=0; i<imax-1; ++i) {
-    dr[i] = (R_outer - R_inner[i])/(T(jmax)-1.0);
+    dr[i] = (R_casing - R_inner[i])/(T(j_casing-1));
   }
 
   // Computing r- and theta-coordinates for mesh
   for (int i=0; i<imax-1; ++i) {
     theta[i] = T(i)*dtheta;
-    for (int j=0; j<jmax; ++j) {
+    for (int j=0; j<j_casing; ++j) {
       r(i,j) = R_inner[i] + T(j)*dr[i];
     }
+    for (int j=j_casing; j<jmax; ++j){
+      r(i,j) = R_inner[i] + T(j_casing-1)*dr[i] + T(j-j_casing+1)*(R_outer - R_casing)/(T(jmax-j_casing));
+    }
+
   }
 
   // Creating x-y coordinates for nodes and instantiating node objects

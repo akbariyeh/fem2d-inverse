@@ -1,4 +1,4 @@
-#define VERBOSE
+//#define VERBOSE
 #include <iostream>
 #include <fstream>
 #include <vector>
@@ -34,8 +34,8 @@
 int main() {
 
   // Inputs for optimization
-  unsigned int max_iterations = 500;
-  double dr = 1.0e-6;
+  unsigned int max_iterations = 300;
+  double dr = 1.0e-10;
   double tolerance = 1.0e-3;
   bool use_sacvm = true;
 
@@ -77,6 +77,7 @@ int main() {
   // Creating a laplace object
   std::cout << "Creating a new problem object. " << std::endl;
   laplace<double>* lp = new laplace<double>();
+  lp->set_problem_specific_data(0.05,300);
   opt.set_problem(lp);
   opt.set_qn_target(qn_target);
   
